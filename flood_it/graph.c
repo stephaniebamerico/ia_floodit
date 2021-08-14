@@ -52,4 +52,8 @@ void remove_neighbor(Vertice *src, Vertice *dest) {
         src->neighbors[i_color] = i_src->next;
     else
         prev->next = i_src->next;
+
+    i_src->next = NULL;
+    i_src->vertice = NULL;
+    free(i_src);
 }

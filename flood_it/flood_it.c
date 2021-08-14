@@ -4,6 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// TODO [enhance] traverse on a different way for finding best board (astar func)
+//       currently we pin the first board, removing it from the list, and if we
+//       find another one, we put it back again, so it will be compared again
+// TODO [enhance] use heaps for finding best board (astar func)
+// TODO [enhance] translate debug messages to english
+// TODO [enhance] use preprocessor for debug sections
+
 int DEBUG = 0;
 
 // DEBUG =====================================================
@@ -53,10 +60,13 @@ void print_neighbors(List *vertices, int colors) {
             printf("\n");
         }
         vertices = vertices->next;
-    } 
+    }
 }
 
 void print_list(List *vertices) {
+    if (vertices == NULL)
+        return;
+
     printf("\n%d(%d)", vertices->vertice->id, vertices->vertice->color+1);
     while (vertices->next != NULL) {
         vertices = vertices->next;
@@ -82,14 +92,17 @@ void remove_vertice(Board *board, Vertice *v) {
         printf("Removendo %d\n", v->id);
 
     List *i_v = board->vertices;
-    while (i_v->next != NULL && i_v->next->vertice->id != v->id)
+    while (i_v->next->vertice->id != v->id)
         i_v = i_v->next;
-    
-    if (i_v->next != NULL) {
-        board->vertices_per_color[i_v->next->vertice->color] -= 1;
-        i_v->next = i_v->next->next;
-        // TODO: free t e t->v
-    }
+
+    board->vertices_per_color[i_v->next->vertice->color] -= 1;
+
+    List *remove = i_v->next;
+    i_v->next = i_v->next->next;
+
+    free(remove->vertice->neighbors);
+    free(remove->vertice);
+    free(remove);
 }
 
 void copy_board(Board **new_board, Board **board) {
@@ -233,6 +246,8 @@ void collapses_map(Board *board, Vertice *root, int color, Vertice **vertices_ma
                 printf(". Copiando lista de cor %d\n", i_color+1);
 
             while (i_neighbor != NULL) {
+                int i_neighbor_id = i_neighbor->vertice->id;
+
                 add_neighbor(root, i_neighbor->vertice);
                 add_neighbor(i_neighbor->vertice, root);
 
@@ -241,13 +256,16 @@ void collapses_map(Board *board, Vertice *root, int color, Vertice **vertices_ma
                 remove_neighbor(neighbor, i_neighbor->vertice);
 
                 if (DEBUG)
-                    printf(".. %d copiado\n", i_neighbor->vertice->id);
+                    printf(".. %d copiado\n", i_neighbor_id);
+
                 i_neighbor = next;
             }
         }
 
         i_root = i_root->next;
         remove_neighbor(root, neighbor);
+        if (vertices_matrix != NULL)
+            vertices_matrix[neighbor->id] = NULL;
         remove_vertice(board, neighbor);
     }
 
@@ -271,9 +289,23 @@ void add_board(Search_Space **search_space, Board *board) {
     t->next = NULL;
 }
 
-void remove_board(Search_Space **search_space) {
-    *search_space = (*search_space)->next;
-    //TODO FREE
+void remove_board(Search_Space **search_space, Search_Space *remove) {
+    Search_Space *cur = *search_space;
+    Search_Space *prev = NULL;
+    while (cur != remove) {
+        prev = cur;
+        cur = cur->next;
+    }
+
+    if (prev == NULL) {
+        *search_space = (*search_space)->next;
+    }
+    else {
+        prev->next = cur->next;
+    }
+    remove->next = NULL;
+    remove->board = NULL;
+    free(remove);
 }
 
 void update_history(Board **board) {
@@ -320,7 +352,7 @@ History* a_star(Board *board) {
         printf("=======================================================\n");
         // Acha o board com o menor f
         q = search_space->board;
-        remove_board(&search_space);
+        remove_board(&search_space, search_space);
 
         Search_Space *t = search_space;
         while (t != NULL) {
@@ -331,10 +363,13 @@ History* a_star(Board *board) {
                 q = t->board;
 
                 // Remove q novo da lista
-                remove_board(&t);
+                Search_Space *next = t->next;
+                remove_board(&search_space, t);
+                t = next;
             }
-            //printf("f: %d\n", t->board->f_parameter);
-            t = t->next;
+            else {
+                t = t->next;
+            }
         }
 
         print_list(q->vertices);
@@ -350,7 +385,7 @@ History* a_star(Board *board) {
 
                 Vertice *new_root = new_board->vertices->vertice;
                 new_board->vertices_per_color[new_root->color] -= 1;
-                collapses_map(new_board, new_root, new_color);
+                collapses_map(new_board, new_root, new_color, NULL);
                 new_board->vertices_per_color[new_root->color] += 1;
                 update_history(&new_board);
 
@@ -385,9 +420,7 @@ int main(int argc, char** argv) {
     int lin, col;
     scanf("%d %d %d", &lin, &col, &(board->colors));
 
-    board->vertices_per_color = (int *) malloc(sizeof(int)*board->colors);
-    for (int i = 0; i < board->colors; i++) 
-        board->vertices_per_color[i] = 0;    
+    board->vertices_per_color = (int *) calloc(board->colors, sizeof(int));
 
     int n_vertices = lin * col;
 

@@ -37,10 +37,10 @@ void copy_board(Board **new_board, Board **board);
 void map_preprocessing(Board *board, Vertice **vertices_matrix, int lin, int col);
 
 // Collapses same color neighbors
-void collapses_map(Board *board, Vertice *root, int color);
+void collapses_map(Board *board, Vertice *root, int color, Vertice **vertices_matrix);
 
 void add_board(Search_Space **search_space, Board *board);
-void remove_board(Search_Space **search_space);
+void remove_board(Search_Space **search_space, Search_Space *remove);
 
 void update_history(Board **board);
 
