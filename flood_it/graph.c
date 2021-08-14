@@ -8,12 +8,12 @@ void new_vertice(Vertice **v, int n_colors, int id, int color) {
     (*v)->id = id;
     (*v)->color = color;
     (*v)->neighbors = (List **) malloc(n_colors * sizeof(List *));
-    for (int i = 0; i < n_colors; i++)
-        (*v)->neighbors[i] = NULL;        
+    for (int i = 0; i < n_colors; ++i)
+        (*v)->neighbors[i] = NULL;
     (*v)->copy = NULL;
 }
 
-void add_neighbor(Vertice *src, Vertice *dest) {   
+void add_neighbor(Vertice *src, Vertice *dest) {
     if (DEBUG)
         printf("Criando %d -> %d\n", src->id, dest->id);
 

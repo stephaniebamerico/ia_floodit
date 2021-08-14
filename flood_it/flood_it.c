@@ -24,7 +24,7 @@ void print_map_ids(Vertice **vertices, int lin, int col) {
             printf("%02d ", vertices[(i*col)+j]->id);
         }
         printf("\n");
-    } 
+    }
 }
 
 void print_map_ids_colors(Vertice **vertices, int lin, int col) {
@@ -34,7 +34,7 @@ void print_map_ids_colors(Vertice **vertices, int lin, int col) {
             printf("%02d(%d) ", vertices[(i*col)+j]->id, vertices[(i*col)+j]->color+1);
         }
         printf("\n");
-    } 
+    }
 }
 
 void print_neighbors(List *vertices, int colors) {
@@ -65,7 +65,7 @@ void print_list(List *vertices) {
     printf("\n");
 }
 
-void print_search_space(Search_Space *search_space) {    
+void print_search_space(Search_Space *search_space) {
     printf("\n\nPRINTING SEARCH SPACE\n");
     Search_Space *t = search_space;
     for (int i = 1; t != NULL; ++i) {
@@ -74,7 +74,6 @@ void print_search_space(Search_Space *search_space) {
         t = t->next;
         printf("\n\n");
     }
-    
 }
 // DEBUG =====================================================
 
@@ -93,16 +92,14 @@ void remove_vertice(Board *board, Vertice *v) {
     }
 }
 
-//COMENTAR
 void copy_board(Board **new_board, Board **board) {
     (*new_board) = (Board *) malloc(sizeof(Board));
-
     (*new_board)->colors = (*board)->colors;
-
     (*new_board)->vertices_per_color = (int *) malloc(sizeof(int)*(*board)->colors);  
+
     for (int c = 0; c < (*board)->colors; c++)
         (*new_board)->vertices_per_color[c] = (*board)->vertices_per_color[c];
-    
+
     (*new_board)->vertices = NULL;
     List *i_board = (*board)->vertices, *i_new_board = (*new_board)->vertices;
     Vertice *v, *new_v;
@@ -163,7 +160,7 @@ void copy_board(Board **new_board, Board **board) {
         }
     }
     else
-        (*new_board)->solution = NULL;    
+        (*new_board)->solution = NULL;
 }
 
 void map_preprocessing(Board *board, Vertice **vertices_matrix, int lin, int col) {
@@ -209,18 +206,18 @@ void map_preprocessing(Board *board, Vertice **vertices_matrix, int lin, int col
     // Collapses same color neighbors from all vertices on map
     for (int i = 0; i < lin*col; ++i)
         if (vertices_matrix[i] != NULL)
-            collapses_map(board, vertices_matrix[i], vertices_matrix[i]->color);
+            collapses_map(board, vertices_matrix[i], vertices_matrix[i]->color, vertices_matrix);
 }
 
-void collapses_map(Board *board, Vertice *root, int color) {
+void collapses_map(Board *board, Vertice *root, int color, Vertice **vertices_matrix) {
     if (DEBUG)
         printf("\n[collapses_map]\n==================\nColapsando %d com cor %d!\n", root->id, color+1);
-    
+
     List *i_root, *i_neighbor, *next;
     Vertice *neighbor;
 
     i_root = root->neighbors[color];
-    // Root absorbs neighbor's neighborhood 
+    // Root absorbs neighbor's neighborhood
     while (i_root != NULL) {
         neighbor = i_root->vertice;
 
@@ -228,7 +225,7 @@ void collapses_map(Board *board, Vertice *root, int color) {
             printf("\nColapsando neighbor %d:\n", neighbor->id);
 
         remove_neighbor(neighbor, root);
-    
+
         for (int i_color = 0; i_color < board->colors; ++i_color) {
             i_neighbor = neighbor->neighbors[i_color];
 
@@ -263,7 +260,7 @@ void add_board(Search_Space **search_space, Board *board) {
         while(t->next != NULL)
             t = t->next;
         t->next = (Search_Space *) malloc(sizeof(Search_Space));
-        t = t->next;  
+        t = t->next;
     }
     else {
         t = (Search_Space *) malloc(sizeof(Search_Space));
@@ -284,7 +281,7 @@ void update_history(Board **board) {
     if(t != NULL) {
         while (t->next != NULL)
             t = t->next;
-        
+
         t->next = (History *) malloc(sizeof(History));
         t = t->next;
         t->color = (*board)->vertices->vertice->color + 1;
@@ -303,7 +300,7 @@ int heuristic(Board *board) {
     for (int c = 0; c < board->colors; c++) {
         h += board->vertices_per_color[c];
     }
-    
+
     return h;
 }
 
@@ -332,7 +329,7 @@ History* a_star(Board *board) {
                 add_board(&search_space, q);
 
                 q = t->board;
-                
+
                 // Remove q novo da lista
                 remove_board(&t);
             }
@@ -341,11 +338,10 @@ History* a_star(Board *board) {
         }
 
         print_list(q->vertices);
-        for (int i = 0; i < board->colors; i++)
-            printf("Cor %d: %d\n", i+1, board->vertices_per_color[i]);
-        
+        for (int i = 0; i < q->colors; i++)
+            printf("Cor %d: %d\n", i+1, q->vertices_per_color[i]);
 
-        // Gera os secessores de q
+        // Gera os sucessores de q
         for (int new_color = 0; new_color < q->colors; new_color++) {
             Vertice *root = q->vertices->vertice;
             Board *new_board;
@@ -362,7 +358,7 @@ History* a_star(Board *board) {
                 if(new_board->vertices->next == NULL) {
                     return new_board->solution;
                 }
-                
+
                 // senao, insere sucessor na lista
                 new_board->g_parameter = q->g_parameter + 1;
                 new_board->f_parameter = new_board->g_parameter + heuristic(new_board);
@@ -370,7 +366,6 @@ History* a_star(Board *board) {
             }
         }
         printf("\n\n");
-        //print_search_space(search_space);
     }
     return q->solution;
 }
@@ -380,14 +375,14 @@ int main(int argc, char** argv) {
     if (argc > 1)
         if (strcmp(argv[1], "-d") || strcmp(argv[1], "--debug"))
             DEBUG = 1;
-    
+
     // Reads map as both matrix and list, creating a vertice for each cell
     // The matrix will be useful for preprocessing and the list will be used in the long run
     Board *board = (Board *) malloc(sizeof(Board));
     board->g_parameter = 0;
     board->vertices = NULL;
-    int lin, col;
 
+    int lin, col;
     scanf("%d %d %d", &lin, &col, &(board->colors));
 
     board->vertices_per_color = (int *) malloc(sizeof(int)*board->colors);
@@ -395,9 +390,9 @@ int main(int argc, char** argv) {
         board->vertices_per_color[i] = 0;    
 
     int n_vertices = lin * col;
-    
+
     Vertice **vertices_matrix = (Vertice **) malloc(n_vertices * sizeof(Vertice *));
-    Vertice *v; 
+    Vertice *v;
     List *i_v;
     int color;
     for (int i = 0; i < n_vertices; ++i) {
@@ -406,6 +401,7 @@ int main(int argc, char** argv) {
 
         vertices_matrix[i] = v;
 
+        // alloc space on board´s list of vertices to the new vertice
         if (board->vertices == NULL) {
             board->vertices = (List *) malloc(sizeof(List));
             i_v = board->vertices;
@@ -414,6 +410,7 @@ int main(int argc, char** argv) {
             i_v->next = (List *) malloc(sizeof(List));
             i_v = i_v->next;
         }
+
         board->vertices_per_color[v->color] += 1;
 
         i_v->vertice = v;
@@ -424,12 +421,11 @@ int main(int argc, char** argv) {
         print_map_ids_colors(vertices_matrix, lin, col);
         print_list(board->vertices);
     }
-    
+
     // Create all necessary edges and collapse cells with same color
     map_preprocessing(board, vertices_matrix, lin, col);
-    // TODO: free matrix
     free(vertices_matrix);
-    
+
     if (DEBUG) {
         print_neighbors(board->vertices, board->colors);
         print_list(board->vertices);
