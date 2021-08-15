@@ -3,11 +3,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void new_vertice(Vertice **v, int n_colors, int id, int color) {
+void new_vertice(Vertice **v, int n_colors, int id, int color, int area) {
     *v = (Vertice *) malloc(sizeof(Vertice));
+    memory_used += sizeof(Vertice);
+
     (*v)->id = id;
     (*v)->color = color;
+    (*v)->area = area;
+    (*v)->visited = 0;
+    (*v)->distance = 0;
     (*v)->neighbors = (List **) malloc(n_colors * sizeof(List *));
+    memory_used += n_colors * sizeof(List *);
+
     for (int i = 0; i < n_colors; ++i)
         (*v)->neighbors[i] = NULL;
     (*v)->copy = NULL;
@@ -18,6 +25,8 @@ void add_neighbor(Vertice *src, Vertice *dest) {
         printf("Criando %d -> %d\n", src->id, dest->id);
 
     List *new = (List *) malloc(sizeof(List));
+    memory_used += sizeof(List);
+
     new->vertice = dest;
     new->next = NULL;
 
@@ -56,4 +65,5 @@ void remove_neighbor(Vertice *src, Vertice *dest) {
     i_src->next = NULL;
     i_src->vertice = NULL;
     free(i_src);
+    memory_used -= sizeof(List);
 }

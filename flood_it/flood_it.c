@@ -4,14 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-// TODO [enhance] traverse on a different way for finding best board (astar func)
-//       currently we pin the first board, removing it from the list, and if we
-//       find another one, we put it back again, so it will be compared again
-// TODO [enhance] use heaps for finding best board (astar func)
+// TODO fix prune when full memory
+// TODO [enhance] use better types e.g. short instead of int
+// TODO [enhance] comment everything
 // TODO [enhance] translate debug messages to english
 // TODO [enhance] use preprocessor for debug sections
 
 int DEBUG = 0;
+long int memory_used;
 
 // DEBUG =====================================================
 void print_map_colors(Vertice **vertices, int lin, int col) {
@@ -21,7 +21,7 @@ void print_map_colors(Vertice **vertices, int lin, int col) {
             printf("%d ", vertices[(i*col)+j]->color+1);
         }
         printf("\n");
-    } 
+    }
 }
 
 void print_map_ids(Vertice **vertices, int lin, int col) {
@@ -87,9 +87,87 @@ void print_search_space(Search_Space *search_space) {
 }
 // DEBUG =====================================================
 
+void remove_board(Board *board) {
+    while (board->vertices != NULL) {
+        List *l = board->vertices;
+        Vertice *v = board->vertices->vertice;
+
+        for (int c = 0; c < board->colors; c++) {
+            while (v->neighbors[c] != NULL) {
+                List *i_v = v->neighbors[c];
+
+                v->neighbors[c] = v->neighbors[c]->next;
+
+                i_v->next = NULL;
+                i_v->vertice = NULL;
+                free(i_v);
+                memory_used -= sizeof(List);
+            }
+        }
+
+        board->vertices = l->next;
+        l->next = NULL;
+        l->vertice = NULL;
+        v->copy = NULL;
+
+        free(v->neighbors);
+        free(v);
+        free(l);
+        memory_used -= board->colors * sizeof(List *);
+        memory_used -= sizeof(Vertice);
+        memory_used -= sizeof(List);
+    }
+
+    while (board->solution != NULL) {
+        History *cur_solution = board->solution;
+        board->solution = board->solution->next;
+
+        cur_solution->next = NULL;
+        free(cur_solution);
+        memory_used -= sizeof(History);
+    }
+
+    free(board->vertices_per_color);
+    memory_used -= board->colors * sizeof(int);
+    free(board);
+    memory_used -= sizeof(Board);
+}
+
+void prune(Search_Space **search_space) {
+    while (memory_used >= MEMORY_THRESHOLD && *search_space != NULL) {
+        printf("Memory used %ld\n", memory_used);
+        int nboards = 0;
+        Search_Space *c = (*search_space);
+        do {
+            ++nboards;
+            c = c->next;
+        } while (c != (*search_space));
+        printf("Boards %d\n", nboards);
+
+        Search_Space *cur = (*search_space)->prev; // go to max board at the end of the queue
+
+        if (cur->next == cur) // queue is one element only
+            (*search_space) = NULL;
+
+        cur->prev->next = cur->next;
+        cur->next->prev = cur->prev;
+
+        cur->prev = NULL;
+        cur->next = NULL;
+
+        remove_board(cur->board);
+
+        cur->board = NULL;
+        free(cur);
+        memory_used -= sizeof(Search_Space);
+    }
+}
+
 void remove_vertice(Board *board, Vertice *v) {
     if (DEBUG)
         printf("Removendo %d\n", v->id);
+    // we never remove the root (first on the list) so don't need to check for
+    // it and update the head
 
     List *i_v = board->vertices;
     while (i_v->next->vertice->id != v->id)
@@ -103,12 +181,17 @@ void remove_vertice(Board *board, Vertice *v) {
     free(remove->vertice->neighbors);
     free(remove->vertice);
     free(remove);
+    memory_used -= board->colors * sizeof(List *);
+    memory_used -= sizeof(Vertice);
+    memory_used -= sizeof(List);
 }
 
 void copy_board(Board **new_board, Board **board) {
     (*new_board) = (Board *) malloc(sizeof(Board));
+    memory_used += sizeof(Board);
     (*new_board)->colors = (*board)->colors;
-    (*new_board)->vertices_per_color = (int *) malloc(sizeof(int)*(*board)->colors);  
+    (*new_board)->vertices_per_color = (int *) malloc(sizeof(int)*(*board)->colors);
+    memory_used += sizeof(int) * (*board)->colors;
 
     for (int c = 0; c < (*board)->colors; c++)
         (*new_board)->vertices_per_color[c] = (*board)->vertices_per_color[c];
@@ -120,14 +203,18 @@ void copy_board(Board **new_board, Board **board) {
     // Copy all vertices on the list
     while (i_board != NULL) {
         v = i_board->vertice;
-        new_vertice(&new_v, (*board)->colors, v->id, v->color);
+        new_vertice(&new_v, (*board)->colors, v->id, v->color, v->area);
 
         if ((*new_board)->vertices == NULL) {
             (*new_board)->vertices = (List *) malloc(sizeof(List));
+            memory_used += sizeof(List);
+
             i_new_board = (*new_board)->vertices;
         }
         else {
             i_new_board->next = (List *) malloc(sizeof(List));
+            memory_used += sizeof(List);
+
             i_new_board = i_new_board->next;
         }
         i_new_board->vertice = new_v;
@@ -160,12 +247,16 @@ void copy_board(Board **new_board, Board **board) {
 
     if((*board)->solution != NULL) {
         (*new_board)->solution = (History *) malloc(sizeof(History));
+        memory_used += sizeof(History);
+
         (*new_board)->solution->color = (*board)->solution->color;
         (*new_board)->solution->next = NULL;
 
         History *n_t = (*new_board)->solution;
         for (History *t = (*board)->solution->next; t != NULL; t = t->next) {
             n_t->next = (History *) malloc(sizeof(History));
+            memory_used += sizeof(History);
+
             n_t = n_t->next;
 
             n_t->color = t->color;
@@ -237,6 +328,7 @@ void collapses_map(Board *board, Vertice *root, int color, Vertice **vertices_ma
         if (DEBUG)
             printf("\nColapsando neighbor %d:\n", neighbor->id);
 
+        root->area += neighbor->area;
         remove_neighbor(neighbor, root);
 
         for (int i_color = 0; i_color < board->colors; ++i_color) {
@@ -269,43 +361,112 @@ void collapses_map(Board *board, Vertice *root, int color, Vertice **vertices_ma
         remove_vertice(board, neighbor);
     }
 
+    // if we are changing root color, we need to update the neighborhood list to
+    // the right color
+    List *root_neighbors_to_add = NULL;
+    if (color != root->color) {
+        for (int i_color = 0; i_color < board->colors; ++i_color) {
+            i_root = root->neighbors[i_color];
+            while (i_root != NULL) {
+                Vertice *neighbor = i_root->vertice;
+                remove_neighbor(neighbor, root);
+
+                List *add = (List *) malloc(sizeof(List));
+                memory_used += sizeof(List);
+
+                add->vertice = neighbor;
+                add->next = root_neighbors_to_add;
+
+                root_neighbors_to_add = add;
+
+                i_root = i_root->next;
+            }
+        }
+    }
+
     root->color = color;
+
+    while (root_neighbors_to_add != NULL) {
+        Vertice *add = root_neighbors_to_add->vertice;
+
+        add_neighbor(add, root);
+
+        List *remove = root_neighbors_to_add;
+        root_neighbors_to_add = root_neighbors_to_add->next;
+
+        remove->next = NULL;
+        remove->vertice = NULL;
+        free(remove);
+        memory_used -= sizeof(List);
+    }
 }
 
 void add_board(Search_Space **search_space, Board *board) {
-    Search_Space *t = *search_space;
-    if(t != NULL) {
-        while(t->next != NULL)
-            t = t->next;
-        t->next = (Search_Space *) malloc(sizeof(Search_Space));
-        t = t->next;
-    }
-    else {
-        t = (Search_Space *) malloc(sizeof(Search_Space));
-        *search_space = t;
-    }
+    Search_Space *cur = *search_space;
 
-    t->board = board;
-    t->next = NULL;
+    if (cur == NULL) { // empty queue
+        cur = (Search_Space *) malloc(sizeof(Search_Space));
+        memory_used += sizeof(Search_Space);
+
+        cur->prev = cur;
+        cur->next = cur;
+        cur->board = board;
+        (*search_space) = cur;
+    }
+    else if (board->f_parameter < cur->board->f_parameter) { // insert at the beginning
+        Search_Space *add = (Search_Space *) malloc(sizeof(Search_Space));
+        memory_used += sizeof(Search_Space);
+
+        add->board = board;
+
+        add->prev = cur->prev;
+        cur->prev->next = add;
+
+        add->next = cur;
+        cur->prev = add;
+
+        (*search_space) = add;
+    }
+    else { // insert at the middle
+        cur = cur->next;
+
+        // until we are back at the beginning
+        while(cur != (*search_space) && cur->board->f_parameter < board->f_parameter) {
+            cur = cur->next;
+        }
+
+        Search_Space *add = (Search_Space *) malloc(sizeof(Search_Space));
+        memory_used += sizeof(Search_Space);
+
+        add->board = board;
+
+        add->prev = cur->prev;
+        cur->prev->next = add;
+
+        add->next = cur;
+        cur->prev = add;
+    }
 }
 
-void remove_board(Search_Space **search_space, Search_Space *remove) {
+Board* get_best_board(Search_Space **search_space) {
     Search_Space *cur = *search_space;
-    Search_Space *prev = NULL;
-    while (cur != remove) {
-        prev = cur;
-        cur = cur->next;
-    }
+    Board *ret = cur->board;
 
-    if (prev == NULL) {
-        *search_space = (*search_space)->next;
-    }
-    else {
-        prev->next = cur->next;
-    }
-    remove->next = NULL;
-    remove->board = NULL;
-    free(remove);
+    if (cur->next == cur) // queue is one element only
+        (*search_space) = NULL;
+    else // we always remove the head, so update it
+        (*search_space) = cur->next;
+
+    cur->prev->next = cur->next;
+    cur->next->prev = cur->prev;
+
+    cur->prev = NULL;
+    cur->next = NULL;
+    cur->board = NULL;
+    free(cur);
+    memory_used -= sizeof(Search_Space);
+
+    return ret;
 }
 
 void update_history(Board **board) {
@@ -315,23 +476,126 @@ void update_history(Board **board) {
             t = t->next;
 
         t->next = (History *) malloc(sizeof(History));
+        memory_used += sizeof(History);
+
         t = t->next;
         t->color = (*board)->vertices->vertice->color + 1;
         t->next = NULL;
     }
     else {
         (*board)->solution = (History *) malloc(sizeof(History));
+        memory_used += sizeof(History);
+
         t = (*board)->solution;
     }
     t->color = (*board)->vertices->vertice->color + 1;
     t->next = NULL;
 }
 
-int heuristic(Board *board) {
-    int h = 0;
+double heuristic(Board *board) {
+    double h = 0;
+
+    // sum of vertices yet to flood
+    int h_colors = 0;
     for (int c = 0; c < board->colors; c++) {
-        h += board->vertices_per_color[c];
+        h_colors += board->vertices_per_color[c];
     }
+    // sum of vertices yet to flood
+
+    // calc area of the board
+    int area_flooded = board->vertices->vertice->area;
+    int area_to_flood = 0;
+    List *l = board->vertices->next;
+    while (l != NULL) {
+        area_to_flood += l->vertice->area;
+        l = l->next;
+    }
+    // calc area of the board
+
+    // calc area of root and adjacents
+    int area_root_adj = 0;
+    int n_root_neighbors = 0;
+    for (int c = 0; c < board->colors; c++) {
+        List *neigh = board->vertices->vertice->neighbors[c];
+
+        while (neigh != NULL) {
+            area_root_adj += neigh->vertice->area;
+            ++n_root_neighbors;
+            neigh = neigh->next;
+        }
+    }
+    // calc area of root and adjacents
+
+    // bfs
+      // reset graph
+    l = board->vertices;
+    while (l != NULL) {
+        l->vertice->visited = 0;
+        l->vertice->distance = 0;
+        l = l->next;
+    }
+      // reset graph
+
+    List *queue = (List *) malloc(sizeof(List));
+    memory_used += sizeof(List);
+    queue->next = NULL;
+    queue->vertice = board->vertices->vertice;
+    queue->vertice->visited = 1;
+    while (queue != NULL) {
+        l = queue;
+        Vertice *v = queue->vertice;
+        queue = queue->next;
+        l->next = NULL;
+        l->vertice = NULL;
+        free(l);
+        memory_used -= sizeof(List);
+
+        for (int c = 0; c < board->colors; c++) {
+            List *neigh = v->neighbors[c];
+
+            while (neigh != NULL) {
+                if (neigh->vertice->visited == 0) {
+                    neigh->vertice->visited = 1;
+                    neigh->vertice->distance = v->distance + 1;
+
+                    List *add = (List *) malloc(sizeof(List));
+                    memory_used += sizeof(List);
+                    add->vertice = neigh->vertice;
+                    add->next = NULL;
+                    List *queue_trav = queue;
+                    List *prev = NULL;
+                    while (queue_trav != NULL) {
+                        prev = queue_trav;
+                        queue_trav = queue_trav->next;
+                    }
+                    if (prev != NULL)
+                        prev->next = add;
+                    else
+                        queue = add;
+                }
+                neigh = neigh->next;
+            }
+        }
+    }
+
+      // sum distances
+    int sum_distances = 0;
+    l = board->vertices;
+    while (l != NULL) {
+        sum_distances += l->vertice->distance;
+        l = l->next;
+    }
+      // sum distances
+    // bfs
+
+    //h = h_colors;
+    //h = h_colors * 0.85 + (area_to_flood/(double)area_flooded) * 0.15;
+    //h = h_colors * 0.75 + (area_to_flood/(double)area_flooded) * 0.2 + area_root_adj * 0.05;
+    h = ((h_colors / (double) board->colors) * 0.50) +
+        (area_to_flood * 0.25) +
+        (area_root_adj * 0.08) -
+        (n_root_neighbors * 0.13) +
+        (sum_distances * 0.27);
 
     return h;
 }
@@ -342,44 +606,24 @@ History* a_star(Board *board) {
     board->f_parameter = heuristic(board);
     board->solution = NULL;
 
-    // Insere t na lista l
-    Search_Space *search_space = (Search_Space *) malloc(sizeof(Search_Space));
-    search_space->board = board;
-    search_space->next = NULL;
+    Search_Space *search_space = NULL;
+    add_board(&search_space, board);
 
-    Board *q = search_space->board;
-    while (q->vertices->next != NULL) {
-        printf("=======================================================\n");
-        // Acha o board com o menor f
-        q = search_space->board;
-        remove_board(&search_space, search_space);
+    Board *q = get_best_board(&search_space);
+    while (q->vertices->next != NULL) { // if this is false, then there is only one vertice in the graph, thus it is a board fully flooded
+//        printf("Memory used %ld\n", memory_used);
+//        printf("H = %lf\n", q->f_parameter);
+        //printf("=======================================================\n");
+        //print_list(q->vertices);
+        //for (int i = 0; i < q->colors; i++)
+        //    printf("Cor %d: %d\n", i+1, q->vertices_per_color[i]);
+        //printf("\n\n");
 
-        Search_Space *t = search_space;
-        while (t != NULL) {
-            if (t->board->f_parameter < q->f_parameter) {
-                // Add q antigo na lista
-                add_board(&search_space, q);
-
-                q = t->board;
-
-                // Remove q novo da lista
-                Search_Space *next = t->next;
-                remove_board(&search_space, t);
-                t = next;
-            }
-            else {
-                t = t->next;
-            }
-        }
-
-        print_list(q->vertices);
-        for (int i = 0; i < q->colors; i++)
-            printf("Cor %d: %d\n", i+1, q->vertices_per_color[i]);
-
-        // Gera os sucessores de q
+        // generate sucessors of q board
         for (int new_color = 0; new_color < q->colors; new_color++) {
             Vertice *root = q->vertices->vertice;
             Board *new_board;
+
             if (root->neighbors[new_color] != NULL) {
                 copy_board(&new_board, &q);
 
@@ -389,23 +633,34 @@ History* a_star(Board *board) {
                 new_board->vertices_per_color[new_root->color] += 1;
                 update_history(&new_board);
 
-                // Se sucessor e solucao, para
+
+                // if this sucessor is a solution, stop
                 if(new_board->vertices->next == NULL) {
                     return new_board->solution;
                 }
 
-                // senao, insere sucessor na lista
+                // otherwise, inserts it into the queue to explore
                 new_board->g_parameter = q->g_parameter + 1;
                 new_board->f_parameter = new_board->g_parameter + heuristic(new_board);
                 add_board(&search_space, new_board);
             }
+
+//            if (memory_used >= MEMORY_THRESHOLD)
+//                prune(&search_space);
         }
-        printf("\n\n");
+
+        remove_board(q);
+
+        q = get_best_board(&search_space);
+        if (q == NULL)
+            return NULL;
     }
     return q->solution;
 }
 
 int main(int argc, char** argv) {
+    memory_used = 0;
+
     // Activates debug mode if parameter was passed
     if (argc > 1)
         if (strcmp(argv[1], "-d") || strcmp(argv[1], "--debug"))
@@ -414,6 +669,8 @@ int main(int argc, char** argv) {
     // Reads map as both matrix and list, creating a vertice for each cell
     // The matrix will be useful for preprocessing and the list will be used in the long run
     Board *board = (Board *) malloc(sizeof(Board));
+    memory_used += sizeof(Board);
+
     board->g_parameter = 0;
     board->vertices = NULL;
 
@@ -421,26 +678,33 @@ int main(int argc, char** argv) {
     scanf("%d %d %d", &lin, &col, &(board->colors));
 
     board->vertices_per_color = (int *) calloc(board->colors, sizeof(int));
+    memory_used += board->colors * sizeof(int);
 
     int n_vertices = lin * col;
 
     Vertice **vertices_matrix = (Vertice **) malloc(n_vertices * sizeof(Vertice *));
+    memory_used += n_vertices * sizeof(Vertice *);
+
     Vertice *v;
     List *i_v;
     int color;
     for (int i = 0; i < n_vertices; ++i) {
         scanf("%d", &color);
-        new_vertice(&v, board->colors, i, color-1);
+        new_vertice(&v, board->colors, i, color-1, 1);
 
         vertices_matrix[i] = v;
 
-        // alloc space on board´s list of vertices to the new vertice
+        // alloc space on board's list of vertices to the new vertice
         if (board->vertices == NULL) {
             board->vertices = (List *) malloc(sizeof(List));
+            memory_used += sizeof(List);
+
             i_v = board->vertices;
         }
         else {
             i_v->next = (List *) malloc(sizeof(List));
+            memory_used += sizeof(List);
+
             i_v = i_v->next;
         }
 
@@ -458,6 +722,7 @@ int main(int argc, char** argv) {
     // Create all necessary edges and collapse cells with same color
     map_preprocessing(board, vertices_matrix, lin, col);
     free(vertices_matrix);
+    memory_used -= n_vertices * sizeof(Vertice *);
 
     if (DEBUG) {
         print_neighbors(board->vertices, board->colors);
